@@ -1,4 +1,4 @@
-﻿const Version = '2026-05-18 18:37:45';
+﻿const Version = '2026-05-26 21:08:57';
 let config_JSON, 反代IP = '', 启用SOCKS5反代 = null, 启用SOCKS5全局反代 = false, 我的SOCKS5账号 = '', parsedSocks5Address = {};
 let 缓存SOCKS5白名单 = null, 缓存反代IP, 缓存反代解析数组, 缓存反代数组索引 = 0, 启用反代兜底 = true, 调试日志打印 = false;
 let SOCKS5白名单 = ['*tapecontent.net', '*cloudatacdn.com', '*loadshare.org', '*cdn-centaurus.com', 'scholar.google.com'];
@@ -3544,7 +3544,7 @@ async function turnConnect(proxy, targetHost, targetPort, TCP连接) {
 		) {
 			const realmBytes = message.attributes[TURN_STUN_ATTR.REALM];
 			const nonce = message.attributes[TURN_STUN_ATTR.NONCE];
-			if (!realmBytes?.byteLength || !nonce?.byteLength) throw new Error('TURN authentication challenge is missing realm or nonce');
+			if (!realmBytes || !nonce?.byteLength) throw new Error('TURN authentication challenge is missing realm or nonce');
 
 			const realm = textDecoder.decode(realmBytes);
 			integrityKey = new Uint8Array(await crypto.subtle.digest('MD5', textEncoder.encode(`${proxy.username}:${realm}:${proxy.password}`)));

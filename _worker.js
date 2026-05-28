@@ -32,6 +32,7 @@ export default {
 		const 访问路径 = url.pathname.slice(1).toLowerCase();
 		调试日志打印 = ['1', 'true'].includes(env.DEBUG) || 调试日志打印;
 		预加载竞速拨号 = ['1', 'true'].includes(env.PRELOAD_RACE_DIAL) || 预加载竞速拨号;
+		if (TCP并发拨号数 !== 1 && 识别运营商(request) === 'cmcc') TCP并发拨号数 = 1;
 		if (env.PROXYIP) {
 			const proxyIPs = await 整理成数组(env.PROXYIP);
 			反代IP = proxyIPs[Math.floor(Math.random() * proxyIPs.length)];
@@ -1855,7 +1856,7 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 	const 连接超时毫秒 = 1000;
 	let 已通过代理发送首包 = false;
 	const TCP连接 = 创建请求TCP连接器(request);
-	if (TCP并发拨号数 !== 1 && 识别运营商(request) === 'cmcc') TCP并发拨号数 = 1;
+
 	async function 等待连接建立(remoteSock, timeoutMs = 连接超时毫秒) {
 		await Promise.race([
 			remoteSock.opened,

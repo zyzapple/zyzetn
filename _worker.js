@@ -1,4 +1,4 @@
-﻿const Version = '2026-06-01 15:49:39';
+﻿const Version = '2026-06-06 13:26:31';
 let config_JSON, 反代IP = '', 启用SOCKS5反代 = null, 启用SOCKS5全局反代 = false, 我的SOCKS5账号 = '', parsedSocks5Address = {};
 let 缓存SOCKS5白名单 = null, 缓存反代IP, 缓存反代解析数组, 缓存反代数组索引 = 0, 启用反代兜底 = true, 调试日志打印 = false;
 let SOCKS5白名单 = ['*tapecontent.net', '*cloudatacdn.com', '*loadshare.org', '*cdn-centaurus.com', 'scholar.google.com'];
@@ -5694,9 +5694,8 @@ function sha224(s) {
 }
 
 async function 解析地址端口(proxyIP, 目标域名 = 'dash.cloudflare.com', UUID = '00000000-0000-4000-8000-000000000000') {
+	proxyIP = proxyIP.toLowerCase();
 	if (!缓存反代IP || !缓存反代解析数组 || 缓存反代IP !== proxyIP) {
-		proxyIP = proxyIP.toLowerCase();
-
 		function 解析地址端口字符串(str) {
 			let 地址 = str, 端口 = 443;
 			if (str.includes(']:')) {

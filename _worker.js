@@ -1,4 +1,4 @@
-﻿const Version = '2026-07-11 02:23:18';
+const Version = '2026-07-11 02:23:18';
 let config_JSON, 缓存SOCKS5白名单 = null, 调试日志打印 = false;
 let SOCKS5白名单 = ['*tapecontent.net', '*cloudatacdn.com', '*loadshare.org', '*cdn-centaurus.com', 'scholar.google.com'];
 const Pages静态页面 = 'https://edt-pages.github.io';
@@ -2084,9 +2084,10 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 
 	async function connectProxyIP(address, port, data = null, 所有反代数组 = null, 启用反代失败兜底 = true) {
 		if (所有反代数组 && 所有反代数组.length > 0) {
-			for (let i = 0; i < 所有反代数组.length; i += 反代并发拨号数) {
+			const 实际并发数 = Math.max(1, 反代并发拨号数);
+			for (let i = 0; i < 所有反代数组.length; i += 实际并发数) {
 				const 候选列表 = [];
-				for (let j = 0; j < 反代并发拨号数 && i + j < 所有反代数组.length; j++) {
+				for (let j = 0; j < 实际并发数 && i + j < 所有反代数组.length; j++) {
 					const 索引 = (反代数组索引 + i + j) % 所有反代数组.length;
 					const [反代地址, 反代端口] = 所有反代数组[索引];
 					候选列表.push({ hostname: 反代地址, port: 反代端口, index: 索引 });
@@ -4936,7 +4937,7 @@ async function DoH查询(域名, 记录类型, DoH解析服务 = "https://cloudf
 		};
 
 		// 构建 DNS 查询报文
-		const qname = 编码域名(域名);
+		const qname = 编码域名(规范化域名);
 		const query = new Uint8Array(12 + qname.length + 4);
 		const qview = new DataView(query.buffer);
 		qview.setUint16(0, crypto.getRandomValues(new Uint16Array(1))[0]); // ID (random per RFC 1035)
@@ -5038,10 +5039,11 @@ async function DoH查询(域名, 记录类型, DoH解析服务 = "https://cloudf
 		const 耗时 = (performance.now() - 开始时间).toFixed(2);
 		log(`[DoH查询] 查询完成 ${域名} ${记录类型} via ${DoH解析服务} ${耗时}ms 共${answers.length}条结果${answers.length > 0 ? '\n' + answers.map((a, i) => `  ${i + 1}. ${a.name} type=${a.type} TTL=${a.TTL} data=${a.data}`).join('\n') : ''}`);
 		// DoH 缓存至少保留 5 分钟，响应 TTL 更长时尊重响应 TTL；空响应使用 5 分钟负缓存
-		const 最小TTL = answers.length > 0 ? Math.min(...answers.map(a => a.TTL)) : 0;
+		const 相关记录 = answers.filter(answer => answer.type === qtype);
+		const 最小TTL = 相关记录.length > 0 ? Math.min(...相关记录.map(a => a.TTL)) : 0;
 		const 缓存TTL = Math.max(最小TTL, 5 * 60);
 		const 缓存过期时间 = Date.now() + 缓存TTL * 1000;
-		const 缓存数据 = answers.filter(answer => answer.type === qtype).map(answer => answer.data);
+		const 缓存数据 = 相关记录.map(answer => answer.data);
 		if (缓存数据.length > 0 || answers.length === 0) {
 			if (Object.keys(DoH缓存).length >= DoH缓存最大条目) {
 				const 清理时间戳 = Date.now();

@@ -2084,7 +2084,7 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 
 	async function connectProxyIP(address, port, data = null, 所有反代数组 = null, 启用反代失败兜底 = true) {
 		if (所有反代数组 && 所有反代数组.length > 0) {
-			const 实际并发数 = Math.max(1, 反代并发拨号数);
+			const 实际并发数 = Math.max(1, Math.floor(Number(反代并发拨号数) || 1));
 			for (let i = 0; i < 所有反代数组.length; i += 实际并发数) {
 				const 候选列表 = [];
 				for (let j = 0; j < 实际并发数 && i + j < 所有反代数组.length; j++) {

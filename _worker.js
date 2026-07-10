@@ -6,7 +6,7 @@ const Pages静态页面 = 'https://edt-pages.github.io';
 const WS早期数据最大字节 = 8 * 1024, WS早期数据最大头长度 = Math.ceil(WS早期数据最大字节 * 4 / 3) + 4;
 const 上行合包目标字节 = 16 * 1024, 上行队列最大字节 = 16 * 1024 * 1024, 上行队列最大条目 = 4096;
 const 下行Grain包字节 = 32 * 1024, 下行Grain尾部阈值 = 512, 下行Grain静默毫秒 = 0;
-let TCP并发拨号数 = 2, 预加载竞速拨号 = false;
+let TCP并发拨号数 = 2, 反代并发拨号数 = 1, 预加载竞速拨号 = false;
 ///////////////////////////////////////////////////////查杀特征码///////////////////////////////////////////////
 const 特征码字典 = [
 	(Proxy.name + "IP").toUpperCase(),
@@ -2084,9 +2084,9 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 
 	async function connectProxyIP(address, port, data = null, 所有反代数组 = null, 启用反代失败兜底 = true) {
 		if (所有反代数组 && 所有反代数组.length > 0) {
-			for (let i = 0; i < 所有反代数组.length; i += TCP并发拨号数) {
+			for (let i = 0; i < 所有反代数组.length; i += 反代并发拨号数) {
 				const 候选列表 = [];
-				for (let j = 0; j < TCP并发拨号数 && i + j < 所有反代数组.length; j++) {
+				for (let j = 0; j < 反代并发拨号数 && i + j < 所有反代数组.length; j++) {
 					const 索引 = (反代数组索引 + i + j) % 所有反代数组.length;
 					const [反代地址, 反代端口] = 所有反代数组[索引];
 					候选列表.push({ hostname: 反代地址, port: 反代端口, index: 索引 });

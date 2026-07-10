@@ -1,4 +1,4 @@
-const Version = '2026-07-09 00:18:15';
+const Version = '2026-07-11 02:23:18';
 let config_JSON, 缓存SOCKS5白名单 = null, 调试日志打印 = false;
 let SOCKS5白名单 = ['*tapecontent.net', '*cloudatacdn.com', '*loadshare.org', '*cdn-centaurus.com', 'scholar.google.com'];
 const Pages静态页面 = 'https://edt-pages.github.io';
@@ -6,7 +6,7 @@ const Pages静态页面 = 'https://edt-pages.github.io';
 const WS早期数据最大字节 = 8 * 1024, WS早期数据最大头长度 = Math.ceil(WS早期数据最大字节 * 4 / 3) + 4;
 const 上行合包目标字节 = 16 * 1024, 上行队列最大字节 = 16 * 1024 * 1024, 上行队列最大条目 = 4096;
 const 下行Grain包字节 = 32 * 1024, 下行Grain尾部阈值 = 512, 下行Grain静默毫秒 = 0;
-let TCP并发拨号数 = 2, 预加载竞速拨号 = false;
+let TCP并发拨号数 = 2, 反代并发拨号数 = 1, 预加载竞速拨号 = false;
 ///////////////////////////////////////////////////////查杀特征码///////////////////////////////////////////////
 const 特征码字典 = [
 	(Proxy.name + "IP").toUpperCase(),
@@ -2084,9 +2084,10 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 
 	async function connectProxyIP(address, port, data = null, 所有反代数组 = null, 启用反代失败兜底 = true) {
 		if (所有反代数组 && 所有反代数组.length > 0) {
-			for (let i = 0; i < 所有反代数组.length; i += TCP并发拨号数) {
+			const 实际并发数 = Math.max(1, Math.floor(Number(反代并发拨号数) || 1));
+			for (let i = 0; i < 所有反代数组.length; i += 实际并发数) {
 				const 候选列表 = [];
-				for (let j = 0; j < TCP并发拨号数 && i + j < 所有反代数组.length; j++) {
+				for (let j = 0; j < 实际并发数 && i + j < 所有反代数组.length; j++) {
 					const 索引 = (反代数组索引 + i + j) % 所有反代数组.length;
 					const [反代地址, 反代端口] = 所有反代数组[索引];
 					候选列表.push({ hostname: 反代地址, port: 反代端口, index: 索引 });
@@ -4901,14 +4902,24 @@ function 替换星号为随机字符(内容) {
 	});
 }
 
+const DoH缓存 = {};
+const DoH缓存最大条目 = 256;
+const DoH记录类型映射 = { A: 1, NS: 2, CNAME: 5, MX: 15, TXT: 16, AAAA: 28, SRV: 33, HTTPS: 65 };
 async function DoH查询(域名, 记录类型, DoH解析服务 = "https://cloudflare-dns.com/dns-query") {
+	const 规范化域名 = String(域名 || '').trim().toLowerCase().replace(/\.$/, '');
+	const 规范化记录类型 = String(记录类型 || '').trim().toUpperCase();
+	const 缓存键 = `${规范化域名}:${规范化记录类型}`;
+	const qtype = DoH记录类型映射[规范化记录类型] || 1;
+	const 当前时间戳 = Date.now();
+	const 现缓存项 = DoH缓存[缓存键];
+	if (现缓存项 && 当前时间戳 < 现缓存项.过期时间) {
+		log(`[DoH查询] 命中缓存 ${域名} ${记录类型} via ${DoH解析服务}`);
+		return 现缓存项.data.map(data => ({ type: qtype, data }));
+	}
 	const 开始时间 = performance.now();
 	log(`[DoH查询] 开始查询 ${域名} ${记录类型} via ${DoH解析服务}`);
 	try {
 		// 记录类型字符串转数值
-		const 类型映射 = { 'A': 1, 'NS': 2, 'CNAME': 5, 'MX': 15, 'TXT': 16, 'AAAA': 28, 'SRV': 33, 'HTTPS': 65 };
-		const qtype = 类型映射[记录类型.toUpperCase()] || 1;
-
 		// 编码域名为 DNS wire format labels
 		const 编码域名 = (name) => {
 			const parts = name.endsWith('.') ? name.slice(0, -1).split('.') : name.split('.');
@@ -4926,7 +4937,7 @@ async function DoH查询(域名, 记录类型, DoH解析服务 = "https://cloudf
 		};
 
 		// 构建 DNS 查询报文
-		const qname = 编码域名(域名);
+		const qname = 编码域名(规范化域名);
 		const query = new Uint8Array(12 + qname.length + 4);
 		const qview = new DataView(query.buffer);
 		qview.setUint16(0, crypto.getRandomValues(new Uint16Array(1))[0]); // ID (random per RFC 1035)
@@ -5027,6 +5038,25 @@ async function DoH查询(域名, 记录类型, DoH解析服务 = "https://cloudf
 		}
 		const 耗时 = (performance.now() - 开始时间).toFixed(2);
 		log(`[DoH查询] 查询完成 ${域名} ${记录类型} via ${DoH解析服务} ${耗时}ms 共${answers.length}条结果${answers.length > 0 ? '\n' + answers.map((a, i) => `  ${i + 1}. ${a.name} type=${a.type} TTL=${a.TTL} data=${a.data}`).join('\n') : ''}`);
+		// DoH 缓存至少保留 5 分钟，响应 TTL 更长时尊重响应 TTL；空响应使用 5 分钟负缓存
+		const 相关记录 = answers.filter(answer => answer.type === qtype);
+		const 最小TTL = 相关记录.length > 0 ? Math.min(...相关记录.map(a => a.TTL)) : 0;
+		const 缓存TTL = Math.max(最小TTL, 5 * 60);
+		const 缓存过期时间 = Date.now() + 缓存TTL * 1000;
+		const 缓存数据 = 相关记录.map(answer => answer.data);
+		if (缓存数据.length > 0 || answers.length === 0) {
+			if (Object.keys(DoH缓存).length >= DoH缓存最大条目) {
+				const 清理时间戳 = Date.now();
+				for (const [缓存条目键, 缓存条目] of Object.entries(DoH缓存)) {
+					if (清理时间戳 >= 缓存条目.过期时间) delete DoH缓存[缓存条目键];
+				}
+				if (Object.keys(DoH缓存).length >= DoH缓存最大条目) {
+					delete DoH缓存[Object.keys(DoH缓存)[0]];
+				}
+			}
+			DoH缓存[缓存键] = { data: 缓存数据, 过期时间: 缓存过期时间 };
+			log(`[DoH查询] 写入缓存 ${域名} ${记录类型} TTL=${缓存TTL}s${缓存数据.length === 0 ? '（空结果）' : ''}`);
+		}
 		return answers;
 	} catch (error) {
 		const 耗时 = (performance.now() - 开始时间).toFixed(2);

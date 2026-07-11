@@ -180,7 +180,7 @@
 
 ## ⭐ 项目热度
 
-[![Stargazers over time](https://starchart.cc/cmliu/edgetunnel.svg?variant=adaptive)](https://starchart.cc/cmliu/edgetunnel)
+![Stargazers over time](https://github.com/cmliu/cmliu/blob/main/star/edgetunnel.svg)
 
 ---
 

@@ -1,4 +1,4 @@
-const Version = '2026-07-11 19:02:35';
+﻿const Version = '2026-07-11 19:02:35';
 let config_JSON, 缓存SOCKS5白名单 = null, 调试日志打印 = false;
 let SOCKS5白名单 = ['*tapecontent.net', '*cloudatacdn.com', '*loadshare.org', '*cdn-centaurus.com', 'scholar.google.com'];
 const Pages静态页面 = 'https://edt-pages.github.io';
@@ -538,7 +538,14 @@ async function 处理XHTTP请求(request, yourUUID, 反代上下文 = {}) {
 	}
 	if (isSpeedTestSite(首包.hostname)) {
 		try { reader.releaseLock() } catch (e) { }
-		return new Response('Forbidden', { status: 403 });
+		return new Response(构造本地204响应(首包.respHeader), {
+			status: 200,
+			headers: {
+				'Content-Type': 'application/octet-stream',
+				'X-Accel-Buffering': 'no',
+				'Cache-Control': 'no-store'
+			}
+		});
 	}
 	if (首包.isUDP && 首包.协议 !== 'trojan' && 首包.port !== 53) {
 		try { reader.releaseLock() } catch (e) { }
@@ -1052,7 +1059,10 @@ async function 处理gRPC请求(request, yourUUID, 反代上下文 = {}) {
 								if (解析结果?.hasError) throw new Error(解析结果.message || 'Invalid trojan request');
 								const { port, hostname, rawClientData, isUDP } = 解析结果;
 								log(`[gRPC] 木马首包: ${hostname}:${port} | UDP: ${isUDP ? '是' : '否'}`);
-								if (isSpeedTestSite(hostname)) throw new Error('Speedtest site is blocked');
+								if (isSpeedTestSite(hostname)) {
+									grpcBridge.send(构造本地204响应());
+									return;
+								}
 								if (isUDP) {
 									isDnsQuery = true;
 									木马UDP上下文.目标主机 = hostname;
@@ -1068,12 +1078,15 @@ async function 处理gRPC请求(request, yourUUID, 反代上下文 = {}) {
 								if (解析结果?.hasError) throw new Error(解析结果.message || 'Invalid 魏烈思 request');
 								const { port, hostname, version, isUDP, rawClientData } = 解析结果;
 								log(`[gRPC] 魏烈思首包: ${hostname}:${port} | UDP: ${isUDP ? '是' : '否'}`);
-								if (isSpeedTestSite(hostname)) throw new Error('Speedtest site is blocked');
+								const respHeader = new Uint8Array([version, 0]);
+								if (isSpeedTestSite(hostname)) {
+									grpcBridge.send(构造本地204响应(respHeader));
+									return;
+								}
 								if (isUDP) {
 									if (port !== 53) throw new Error('UDP is not supported');
 									isDnsQuery = true;
 								}
-								const respHeader = new Uint8Array([version, 0]);
 								grpcBridge.send(respHeader);
 								const rawData = rawClientData;
 								if (isDnsQuery) {
@@ -1437,7 +1450,10 @@ async function 处理WS请求(request, yourUUID, url, 反代上下文 = {}) {
 			const port = (明文数据[cursor] << 8) | 明文数据[cursor + 1];
 			cursor += 2;
 			const rawClientData = 明文数据.subarray(cursor);
-			if (isSpeedTestSite(hostname)) throw new Error('Speedtest site is blocked');
+			if (isSpeedTestSite(hostname)) {
+				await 发送本地204响应(上下文.回包Socket);
+				return;
+			}
 			上下文.首包已建立 = true;
 			上下文.目标主机 = hostname;
 			上下文.目标端口 = port;
@@ -1477,7 +1493,10 @@ async function 处理WS请求(request, yourUUID, url, 反代上下文 = {}) {
 			const 解析结果 = 解析木马请求(chunk, yourUUID);
 			if (解析结果?.hasError) throw new Error(解析结果.message || 'Invalid trojan request');
 			const { port, hostname, rawClientData, isUDP } = 解析结果;
-			if (isSpeedTestSite(hostname)) throw new Error('Speedtest site is blocked');
+			if (isSpeedTestSite(hostname)) {
+				await 发送本地204响应(serverSock);
+				return;
+			}
 			if (isUDP) {
 				isDnsQuery = true;
 				木马UDP上下文.目标主机 = hostname;
@@ -1494,12 +1513,15 @@ async function 处理WS请求(request, yourUUID, url, 反代上下文 = {}) {
 			const 解析结果 = 解析魏烈思请求(bytes, yourUUID);
 			if (解析结果?.hasError) throw new Error(解析结果.message || 'Invalid 魏烈思 request');
 			const { port, hostname, version, isUDP, rawClientData } = 解析结果;
-			if (isSpeedTestSite(hostname)) throw new Error('Speedtest site is blocked');
+			const respHeader = new Uint8Array([version, 0]);
+			if (isSpeedTestSite(hostname)) {
+				await 发送本地204响应(serverSock, respHeader);
+				return;
+			}
 			if (isUDP) {
 				if (port === 53) isDnsQuery = true;
 				else throw new Error('UDP is not supported');
 			}
-			const respHeader = new Uint8Array([version, 0]);
 			const rawData = rawClientData;
 			if (isDnsQuery) {
 				if (判断是否是木马) return 转发木马UDP数据(rawData, serverSock, 木马UDP上下文, request);
@@ -2608,17 +2630,30 @@ async function connectStreams(remoteSocket, webSocket, headerData, retryFunc) {
 }
 
 function isSpeedTestSite(hostname) {
-	const speedTestDomains = [atob('c3BlZWQuY2xvdWRmbGFyZS5jb20=')];
-	if (speedTestDomains.includes(hostname)) {
-		return true;
-	}
+	const speedTestDomains = ['speed.cloudflare.com', 'cp.cloudflare.com'];
+	return speedTestDomains.some(domain => hostname === domain || hostname.endsWith('.' + domain));
+}
 
-	for (const domain of speedTestDomains) {
-		if (hostname.endsWith('.' + domain) || hostname === domain) {
-			return true;
-		}
-	}
-	return false;
+const 本地204响应 = new TextEncoder().encode(
+	'HTTP/1.1 204 No Content\r\n' +
+	'Content-Length: 0\r\n' +
+	'Connection: close\r\n' +
+	'\r\n'
+);
+
+function 构造本地204响应(respHeader = null) {
+	if (有效数据长度(respHeader) === 0) return 本地204响应;
+	const 协议响应头 = 数据转Uint8Array(respHeader);
+	const response = new Uint8Array(协议响应头.byteLength + 本地204响应.byteLength);
+	response.set(协议响应头, 0);
+	response.set(本地204响应, 协议响应头.byteLength);
+	log(`[TCP转发] 构造本地204响应: ${response.byteLength}B`);
+	return response;
+}
+
+async function 发送本地204响应(webSocket, respHeader = null) {
+	await WebSocket发送并等待(webSocket, 构造本地204响应(respHeader));
+	closeSocketQuietly(webSocket);
 }
 
 ///////////////////////////////////////////////////////SOCKS5/HTTP函数///////////////////////////////////////////////

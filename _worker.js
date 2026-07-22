@@ -1183,6 +1183,52 @@ async function 处理WS请求(request, yourUUID, url, 反代上下文 = {}) {
 	let WS显式队列字节 = 0, WS显式队列条目 = 0;
 	let 判断协议类型 = null, 当前写入Socket = null, 远端写入器 = null;
 	let ss上下文 = null, ss初始化任务 = null;
+	let WS本地测速模式 = false, WS本地测速回包Socket = null;
+	let WS本地测速请求缓存 = new Uint8Array(0);
+	let WS本地测速首包响应头 = null;
+	const WS本地测速请求上限 = 64 * 1024;
+
+	const 发送WS本地测速响应 = async () => {
+		if (!WS本地测速回包Socket) return;
+		const respHeader = WS本地测速首包响应头;
+		WS本地测速首包响应头 = null;
+		await WebSocket发送并等待(WS本地测速回包Socket, 构造WS本地204响应(respHeader));
+	};
+
+	const 查找HTTP请求头结尾 = (data) => {
+		for (let i = 0; i <= data.byteLength - 4; i++) {
+			if (data[i] === 0x0d && data[i + 1] === 0x0a && data[i + 2] === 0x0d && data[i + 3] === 0x0a) return i + 4;
+		}
+		return -1;
+	};
+
+	const 处理WS本地测速数据 = async (data) => {
+		const chunk = 数据转Uint8Array(data);
+		if (!chunk.byteLength) return;
+		if (WS本地测速请求缓存.byteLength + chunk.byteLength > WS本地测速请求上限) throw new Error('WS local speed-test request is too large');
+		WS本地测速请求缓存 = 拼接字节数据(WS本地测速请求缓存, chunk);
+
+		while (WS本地测速请求缓存.byteLength) {
+			const headerEnd = 查找HTTP请求头结尾(WS本地测速请求缓存);
+			if (headerEnd === -1) return;
+			const headerText = VLESS文本解码器.decode(WS本地测速请求缓存.subarray(0, headerEnd));
+			const contentLengthMatch = headerText.match(/(?:^|\r\n)content-length\s*:\s*(\d+)/i);
+			const contentLength = contentLengthMatch ? Number(contentLengthMatch[1]) : 0;
+			const requestLength = headerEnd + contentLength;
+			if (!Number.isSafeInteger(contentLength) || requestLength > WS本地测速请求上限) throw new Error('WS local speed-test request body is too large');
+			if (WS本地测速请求缓存.byteLength < requestLength) return;
+			WS本地测速请求缓存 = WS本地测速请求缓存.slice(requestLength);
+			await 发送WS本地测速响应();
+		}
+	};
+
+	const 启用WS本地测速模式 = async (回包Socket, respHeader = null, 首请求数据 = null) => {
+		WS本地测速模式 = true;
+		WS本地测速回包Socket = 回包Socket;
+		WS本地测速请求缓存 = new Uint8Array(0);
+		WS本地测速首包响应头 = respHeader;
+		if (有效数据长度(首请求数据) > 0) await 处理WS本地测速数据(首请求数据);
+	};
 
 	const 释放远端写入器 = () => {
 		if (远端写入器) {
@@ -1408,6 +1454,10 @@ async function 处理WS请求(request, yourUUID, url, 反代上下文 = {}) {
 			throw err;
 		}
 		for (const 明文块 of 明文块数组) {
+			if (WS本地测速模式) {
+				await 处理WS本地测速数据(明文块);
+				continue;
+			}
 			let 已写入 = false;
 			try {
 				已写入 = await 写入远端(明文块, false);
@@ -1451,7 +1501,7 @@ async function 处理WS请求(request, yourUUID, url, 反代上下文 = {}) {
 			cursor += 2;
 			const rawClientData = 明文数据.subarray(cursor);
 			if (isSpeedTestSite(hostname)) {
-				await 发送本地204响应(上下文.回包Socket);
+				await 启用WS本地测速模式(上下文.回包Socket, null, rawClientData);
 				return;
 			}
 			上下文.首包已建立 = true;
@@ -1469,6 +1519,10 @@ async function 处理WS请求(request, yourUUID, url, 反代上下文 = {}) {
 		}
 		if (判断协议类型 === 'ss') {
 			await 处理SS数据(chunk);
+			return;
+		}
+		if (WS本地测速模式) {
+			await 处理WS本地测速数据(chunk);
 			return;
 		}
 		if (await 写入远端(chunk)) return;
@@ -1494,7 +1548,7 @@ async function 处理WS请求(request, yourUUID, url, 反代上下文 = {}) {
 			if (解析结果?.hasError) throw new Error(解析结果.message || 'Invalid trojan request');
 			const { port, hostname, rawClientData, isUDP } = 解析结果;
 			if (isSpeedTestSite(hostname)) {
-				await 发送本地204响应(serverSock);
+				await 启用WS本地测速模式(serverSock, null, rawClientData);
 				return;
 			}
 			if (isUDP) {
@@ -1515,7 +1569,7 @@ async function 处理WS请求(request, yourUUID, url, 反代上下文 = {}) {
 			const { port, hostname, version, isUDP, rawClientData } = 解析结果;
 			const respHeader = new Uint8Array([version, 0]);
 			if (isSpeedTestSite(hostname)) {
-				await 发送本地204响应(serverSock, respHeader);
+				await 启用WS本地测速模式(serverSock, respHeader, rawClientData);
 				return;
 			}
 			if (isUDP) {
@@ -2634,14 +2688,13 @@ function isSpeedTestSite(hostname) {
 	return speedTestDomains.some(domain => hostname === domain || hostname.endsWith('.' + domain));
 }
 
-const 本地204响应 = new TextEncoder().encode(
-	'HTTP/1.1 204 No Content\r\n' +
-	'Content-Length: 0\r\n' +
-	'Connection: close\r\n' +
-	'\r\n'
-);
-
 function 构造本地204响应(respHeader = null) {
+	const 本地204响应 = new TextEncoder().encode(
+		'HTTP/1.1 204 No Content\r\n' +
+		'Content-Length: 0\r\n' +
+		'Connection: close\r\n' +
+		'\r\n'
+	);
 	if (有效数据长度(respHeader) === 0) return 本地204响应;
 	const 协议响应头 = 数据转Uint8Array(respHeader);
 	const response = new Uint8Array(协议响应头.byteLength + 本地204响应.byteLength);
@@ -2651,9 +2704,19 @@ function 构造本地204响应(respHeader = null) {
 	return response;
 }
 
-async function 发送本地204响应(webSocket, respHeader = null) {
-	await WebSocket发送并等待(webSocket, 构造本地204响应(respHeader));
-	closeSocketQuietly(webSocket);
+function 构造WS本地204响应(respHeader = null) {
+	const WS本地204响应 = new TextEncoder().encode(
+		'HTTP/1.1 204 No Content\r\n' +
+		'Content-Length: 0\r\n' +
+		'Connection: keep-alive\r\n' +
+		'\r\n'
+	);
+	if (有效数据长度(respHeader) === 0) return WS本地204响应;
+	const 协议响应头 = 数据转Uint8Array(respHeader);
+	const response = new Uint8Array(协议响应头.byteLength + WS本地204响应.byteLength);
+	response.set(协议响应头, 0);
+	response.set(WS本地204响应, 协议响应头.byteLength);
+	return response;
 }
 
 ///////////////////////////////////////////////////////SOCKS5/HTTP函数///////////////////////////////////////////////

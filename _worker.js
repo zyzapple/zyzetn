@@ -2685,6 +2685,7 @@ async function connectStreams(remoteSocket, webSocket, headerData, retryFunc) {
 
 function isSpeedTestSite(hostname) {
 	const speedTestDomains = ['speed.cloudflare.com', 'cp.cloudflare.com'];
+	hostname = hostname.toLowerCase();
 	return speedTestDomains.some(domain => hostname === domain || hostname.endsWith('.' + domain));
 }
 

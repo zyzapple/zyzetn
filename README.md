@@ -207,6 +207,7 @@
 - [zhangtaile](https://github.com/cmliu/edgetunnel/pull/999)
 - [1345695](https://github.com/1345695/edcloudwasm)
 - [ToiCF/GrainTCP](https://github.com/ToiCF/GrainTCP)
+- [xream](https://github.com/cmliu/edgetunnel/pull/1359)
 
 ---
 

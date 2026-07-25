@@ -186,7 +186,7 @@
 
 ## 🙏 特别鸣谢
 ### 💖 赞助支持 - 提供云服务器维持[订阅转换服务](https://sub.cmliussss.net/)
-- [Alice](https://url.cmliussss.com/alice)
+- [Yuusei Network](https://yuusei.io/)
 - [VMRack](https://www.vmrack.net?ref_code=5Zk7eNhbgL7)
 
 ### 🛠 开源代码引用

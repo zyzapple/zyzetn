@@ -2876,7 +2876,7 @@ async function connectStreams(remoteSocket, webSocket, headerData, retryFunc, is
 					await 下行发送器.flush();
 					await 下行发送器.直接发送(value);
 				} else {
-					await 下行发送器.发送(value.slice());
+					await 下行发送器.发送(value);
 				}
 			}
 		} else {
